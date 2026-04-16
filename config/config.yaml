@@ -1,0 +1,46 @@
+project:
+  name: "Nomos"
+  description: "Regime-Adaptive Multi-Asset Systematic Allocator"
+
+assets:
+  trinity:
+    equity:
+      ticker: "^NSEI"
+      name: "NIFTY50"
+    commodity:
+      ticker: "GC=F"
+      name: "Gold"
+    currency:
+      ticker: "USDINR=X"
+      name: "USDINR"
+  volatility:
+    vix:
+      ticker: "NSE:INDIA VIX"
+      instrument_token: 264969  # Standard token for India VIX, verify if changed
+      name: "IndiaVIX"
+      provider: "kite"
+
+credentials:
+  kite:
+    api_key: "esc1gdfadbnqjvat"
+    api_secret: "nstw3hm1cqvvccnr58712mgr8shh5038"
+    access_token: "N27kSpq8ZbFA0usPReZF5fAJFFBJovUM" # Optional: set if persistence logic exists
+
+parameters:
+  data:
+    frequency: "day"
+    start_date: "2015-01-01"
+    end_date: null  # null for latest
+    lookback_vix_ma: 20
+    lookback_volume_avg: 10
+  hmm:
+    states: 3
+    random_state: 42
+  risk:
+    target_vol: 0.15
+    cvar_confidence: 0.975
+
+paths:
+  data_raw: "data/raw"
+  data_processed: "data/processed"
+  models: "models"

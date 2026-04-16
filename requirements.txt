@@ -1,0 +1,12 @@
+pandas
+numpy
+yfinance
+statsmodels
+scikit-learn
+hmmlearn
+arch
+pyyaml
+matplotlib
+seaborn
+kiteconnect
+jupyter
