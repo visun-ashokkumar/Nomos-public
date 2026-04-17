@@ -21,7 +21,7 @@ class DataManager:
 
     def process_data(self, df_raw: pd.DataFrame) -> pd.DataFrame:
         """
-        Orchestrate full feature engineering for Step 1.3 & 1.4.
+        Orchestrate full feature engineering for Step 1.3 - 1.6.
         """
         df_processed = df_raw.copy()
         
@@ -46,16 +46,37 @@ class DataManager:
             df_processed = self.processor.compute_detrended_volume(df_processed, vol_col, window=vol_window)
             
         # 4. Rolling Correlations (1.4)
-        # Corr(Nifty_Ret, Gold_Ret) and Corr(Nifty_Ret, USDINR_Ret)
         nifty_ret = f"{equity_name}_Ret"
         target_rets = [f"{self.config['assets']['trinity']['commodity']['name']}_Ret", 
                        f"{self.config['assets']['trinity']['currency']['name']}_Ret"]
         df_processed = self.processor.compute_rolling_correlations(df_processed, nifty_ret, target_rets, window=20)
         
-        # Drop NaNs created by rolling windows
+        # 5. Advanced Stationarity Enforcement (1.6)
+        # Ensure ALL returns clear ADF and KPSS tests
+        ret_cols = [f"{n}_Ret" for n in trinity_names]
+        # We also enforce on Spread and Volume for total safety
+        other_features = ["VIX_Spread", "Detrended_Vol"]
+        df_processed = self.processor.enforce_stationarity(df_processed, ret_cols + other_features)
+        
+        # Drop NaNs created by rolling windows and differencing
         df_processed.dropna(inplace=True)
         
         return df_processed
+    
+    def check_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Run stationarity diagnostics on all engineered features.
+        """
+        # Determine features to check (exclude raw volume or dates)
+        feature_cols = [c for c in df.columns if '_Ret' in c or 'Spread' in c or 'Detrended' in c or 'Corr' in c]
+        return self.processor.check_stationarity(df, feature_cols)
+
+    def scale_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Apply Z-Score scaling to all engineered features.
+        """
+        feature_cols = [c for c in df.columns if '_Ret' in c or 'Spread' in c or 'Detrended' in c or 'Corr' in c]
+        return self.processor.apply_zscore_scaling(df, feature_cols)
     
     def fetch_all_data(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> pd.DataFrame:
         """
@@ -106,22 +127,21 @@ class DataManager:
                 end_date=end_date
             )
             if not df_vix.empty:
-                # Normalize Kite Index to Date only
                 df_vix.index = pd.to_datetime(df_vix.index).date
-                # Specifically for VIX, we keep OHLC but our processor might only need Close/Volume for now
-                # We'll prefix all VIX columns
                 vix_name = self.config['assets']['volatility']['vix']['name']
-                # For simplicity in this project, we only grab the 'Close' as the primary VIX level
                 df_vix = df_vix[['Close']].copy()
                 df_vix.columns = [vix_name]
+            else:
+                print("WARNING: Kite Connect returned EMPTY data for VIX.")
         except Exception as e:
-            print(f"Skipping Kite ingestion due to error: {e}")
+            print(f"CRITICAL: Skipping Kite ingestion due to error: {e}")
             df_vix = pd.DataFrame()
 
         # 3. Merge DataFrames
         if not df_vix.empty:
             df_combined = df_yahoo.join(df_vix, how='inner')
         else:
+            print("WARNING: Merging without VIX data. Some features will be missing!")
             df_combined = df_yahoo
             
         # 4. Final Cleaning

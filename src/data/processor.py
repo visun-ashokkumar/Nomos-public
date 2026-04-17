@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from typing import List, Optional
+from statsmodels.tsa.stattools import adfuller, kpss
 
 class DataProcessor:
     """
@@ -9,6 +10,87 @@ class DataProcessor:
     
     def __init__(self, config: dict):
         self.config = config
+
+    def check_stationarity(self, df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
+        """
+        Run ADF and KPSS tests for a set of columns and return a summary report.
+        ADF: Null = Non-Stationary (Want p < 0.05)
+        KPSS: Null = Stationary (Want p > 0.05)
+        """
+        results = []
+        for col in columns:
+            if col in df.columns:
+                series = df[col].dropna()
+                # ADF Test
+                adf_res = adfuller(series)
+                # KPSS Test
+                kpss_res = kpss(series, regression='c', nlags='auto')
+                
+                results.append({
+                    "Feature": col,
+                    "ADF_p": round(adf_res[1], 4),
+                    "KPSS_p": round(kpss_res[1], 4),
+                    "Stationary": "YES" if (adf_res[1] < 0.05 and kpss_res[1] > 0.05) else "NO"
+                })
+        
+        report_df = pd.DataFrame(results)
+        return report_df
+
+    def enforce_stationarity(self, df: pd.DataFrame, columns: List[str], max_diff: int = 1) -> pd.DataFrame:
+        """
+        Ensures columns pass both ADF (p < 0.05) and KPSS (p > 0.05).
+        Applies:
+        1. Winsorization (Outlier cleaning @ 3sigma)
+        2. Iterative Differencing (up to max_diff times)
+        """
+        df_clean = df.copy()
+        for col in columns:
+            if col not in df.columns:
+                continue
+            
+            series = df[col].dropna()
+            
+            # Step 1: Outlier Cleaning (Winsorization at 3 sigma)
+            # This often fixes KPSS failures caused by structural spikes
+            mean, std = series.mean(), series.std()
+            series = series.clip(lower=mean - 3*std, upper=mean + 3*std)
+            
+            # Step 2: Iterative Differencing
+            d = 0
+            while d <= max_diff:
+                # Test
+                adf_p = adfuller(series)[1]
+                kpss_p = kpss(series, regression='c', nlags='auto')[1]
+                
+                if adf_p < 0.05 and kpss_p > 0.05:
+                    # Stationary!
+                    break
+                else:
+                    # Difference the series
+                    series = series.diff().dropna()
+                    d += 1
+            
+            # Step 3: Update the DataFrame
+            # Note: We may lose rows due to differencing, but for HMM we align at the end
+            df_clean[col] = series
+            
+        return df_clean
+
+    def apply_zscore_scaling(self, df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
+        """
+        Apply Z-Score Scaling: (x - mean) / std.
+        Ensures all features are on the same scale for the HMM.
+        """
+        df_scaled = df.copy()
+        for col in columns:
+            if col in df.columns:
+                mean = df[col].mean()
+                std = df[col].std()
+                if std != 0:
+                    df_scaled[col] = (df[col] - mean) / std
+                else:
+                    df_scaled[col] = 0.0
+        return df_scaled
 
     def compute_log_returns(self, df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
         """

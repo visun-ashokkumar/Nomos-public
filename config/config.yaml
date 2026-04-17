@@ -39,6 +39,11 @@ parameters:
   risk:
     target_vol: 0.15
     cvar_confidence: 0.975
+    max_leverage: 1.5
+    budgets:
+      Bull: 0.20
+      Neutral: 0.12
+      Bear: 0.05
 
 paths:
   data_raw: "data/raw"
